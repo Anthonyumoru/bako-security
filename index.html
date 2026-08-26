@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🛰️ Bako Community Satellite Security</title>
+  <meta name="description" content="Real-time fire & threat detection from NASA VIIRS satellites for Bako, Kwali, Abuja communities">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0a0e1a;
+      color: #e0e6f0;
+      min-height: 100vh;
+    }
+    .header {
+      background: linear-gradient(135deg, #0d1b2a 0%, #1b263b 100%);
+      padding: 16px 20px;
+      border-bottom: 2px solid #1ae8a8;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .logo { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .logo-icon { font-size: 28px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .header-sub { font-size: 12px; color: #7a8ba6; margin-top: 2px; }
+    .scan-btn {
+      background: #1ae8a8; color: #0a0e1a; border: none;
+      padding: 10px 20px; border-radius: 8px;
+      font-weight: 700; font-size: 14px; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .scan-btn:hover { background: #15c790; transform: scale(1.05); }
+    .scan-btn:disabled { opacity: 0.5; cursor: wait; }
+    .report-btn {
+      background: #ff4757; color: #fff; border: none;
+      padding: 10px 20px; border-radius: 8px;
+      font-weight: 700; font-size: 14px; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .report-btn:hover { background: #e63946; transform: scale(1.05); }
+    .stats-bar {
+      display: flex; gap: 12px; padding: 14px 20px;
+      max-width: 1200px; margin: 0 auto; flex-wrap: wrap;
+    }
+    .stat-card {
+      background: #111827; border: 1px solid #1e2d40;
+      border-radius: 10px; padding: 12px 18px;
+      flex: 1; min-width: 130px; text-align: center;
+    }
+    .stat-value { font-size: 28px; font-weight: 800; }
+    .stat-label { font-size: 11px; color: #7a8ba6; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+    .stat-green { color: #1ae8a8; }
+    .stat-red { color: #ff4757; }
+    .stat-yellow { color: #ffa502; }
+    .stat-blue { color: #4da6ff; }
+    .stat-purple { color: #a55eea; }
+    .container {
+      max-width: 1200px; margin: 0 auto; padding: 0 20px 40px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    }
+    @media (max-width: 768px) { .container { grid-template-columns: 1fr; } }
+    .map-section, .alerts-section {
+      background: #111827; border: 1px solid #1e2d40; border-radius: 12px; overflow: hidden;
+    }
+    .section-header {
+      padding: 12px 16px; border-bottom: 1px solid #1e2d40;
+      font-weight: 700; font-size: 14px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    #map { height: 400px; width: 100%; }
+    @media (max-width: 768px) { #map { height: 300px; } }
+    .alerts-section { max-height: 460px; display: flex; flex-direction: column; }
+    .alerts-list { overflow-y: auto; flex: 1; padding: 8px; }
+    .alert-card {
+      background: #0d1520; border-left: 4px solid #ff4757;
+      border-radius: 8px; padding: 14px; margin-bottom: 10px;
+      transition: transform 0.15s;
+    }
+    .alert-card:hover { transform: translateX(4px); }
+    .alert-card.high { border-left-color: #ff4757; }
+    .alert-card.nominal { border-left-color: #ffa502; }
+    .alert-card.low { border-left-color: #4da6ff; }
+    .alert-card.report { border-left-color: #a55eea; background: #120d1a; }
+    .alert-top { display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px; }
+    .alert-coords { font-size: 15px; font-weight: 700; }
+    .alert-confidence {
+      font-size: 11px; font-weight: 700; padding: 3px 10px;
+      border-radius: 20px; text-transform: uppercase;
+    }
+    .conf-high { background: rgba(255,71,87,0.2); color: #ff4757; }
+    .conf-nominal { background: rgba(255,165,2,0.2); color: #ffa502; }
+    .conf-low { background: rgba(77,166,255,0.2); color: #4da6ff; }
+    .conf-report { background: rgba(165,94,234,0.2); color: #a55eea; }
+    .alert-meta { font-size: 12px; color: #7a8ba6; display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+    .alert-meta span { display: flex; align-items: center; gap: 4px; }
+    .alert-link {
+      display: inline-block; background: #1ae8a8; color: #0a0e1a;
+      text-decoration: none; padding: 6px 14px; border-radius: 6px;
+      font-size: 12px; font-weight: 700;
+    }
+    .alert-link:hover { background: #15c790; }
+    .clear-btn {
+      background: transparent; color: #ff4757; border: 1px solid #ff4757;
+      padding: 4px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600;
+    }
+    .clear-btn:hover { background: rgba(255,71,87,0.1); }
+    .empty-state { text-align: center; padding: 40px 20px; color: #7a8ba6; }
+    .empty-state-icon { font-size: 48px; margin-bottom: 12px; }
+    .status-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: #1ae8a8; animation: pulse 1.5s infinite;
+    }
+    .status-dot.offline { background: #ff4757; }
+    .status-text { font-size: 12px; color: #7a8ba6; }
+    .toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: #1ae8a8; color: #0a0e1a; padding: 12px 24px; border-radius: 8px;
+      font-weight: 700; font-size: 14px; z-index: 2000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5); display: none;
+    }
+    .toast.show { display: block; animation: slideUp 0.3s; }
+    @keyframes slideUp { from { transform: translate(-50%, 100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+    .footer { text-align: center; padding: 20px; color: #4a5a72; font-size: 12px; }
+    .footer a { color: #4da6ff; text-decoration: none; }
+    .config-banner {
+      background: rgba(255,165,2,0.1); border: 1px solid rgba(255,165,2,0.3);
+      border-radius: 10px; padding: 14px 18px; margin: 0 auto 0;
+      max-width: 1200px; margin-bottom: 0; font-size: 13px; color: #ffa502;
+      display: none;
+    }
+    .config-banner.show { display: block; }
+    /* MODAL */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7); z-index: 3000;
+      display: none; align-items: center; justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: #111827; border: 1px solid #1e2d40; border-radius: 12px;
+      padding: 24px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;
+    }
+    .modal h2 { margin-bottom: 16px; font-size: 20px; }
+    .modal label { display: block; font-size: 13px; color: #7a8ba6; margin-bottom: 6px; margin-top: 14px; }
+    .modal input, .modal textarea, .modal select {
+      width: 100%; background: #0d1520; border: 1px solid #1e2d40;
+      color: #e0e6f0; padding: 10px; border-radius: 6px; font-size: 14px;
+      font-family: inherit;
+    }
+    .modal textarea { min-height: 80px; resize: vertical; }
+    .modal input:focus, .modal textarea:focus, .modal select:focus {
+      outline: none; border-color: #1ae8a8;
+    }
+    .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+    .modal-actions button { flex: 1; padding: 12px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; border: none; }
+    .btn-submit { background: #ff4757; color: #fff; }
+    .btn-submit:hover { background: #e63946; }
+    .btn-submit:disabled { opacity: 0.5; }
+    .btn-cancel { background: #1e2d40; color: #7a8ba6; }
+    .btn-cancel:hover { background: #2a3d52; }
+    .geo-btn {
+      background: #1ae8a8; color: #0a0e1a; border: none;
+      padding: 10px; border-radius: 6px; font-weight: 700; font-size: 13px;
+      cursor: pointer; margin-top: 8px; width: 100%;
+    }
+    .geo-btn:hover { background: #15c790; }
+    .report-type-badge {
+      display: inline-block; font-size: 11px; padding: 2px 8px;
+      border-radius: 4px; margin-right: 6px; font-weight: 600;
+    }
+    .type-suspicious_activity { background: rgba(165,94,234,0.2); color: #a55eea; }
+    .type-fire { background: rgba(255,71,87,0.2); color: #ff4757; }
+    .type-intruder { background: rgba(255,165,2,0.2); color: #ffa502; }
+    .type-other { background: rgba(77,166,255,0.2); color: #4da6ff; }
+    .tab-bar {
+      display: flex; gap: 4px; padding: 0 8px; border-bottom: 1px solid #1e2d40;
+    }
+    .tab {
+      padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+      border: none; background: transparent; color: #7a8ba6;
+      border-bottom: 2px solid transparent; transition: all 0.2s;
+    }
+    .tab.active { color: #1ae8a8; border-bottom-color: #1ae8a8; }
+    .tab:hover { color: #e0e6f0; }
+    .tab-badge {
+      display: inline-block; background: #ff4757; color: #fff;
+      font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-content">
+      <div>
+        <div class="logo">
+          <span class="logo-icon">🛰️</span>
+          <span>Bako Community Satellite Security</span>
+        </div>
+        <div class="header-sub">Real-time fire & threat detection from NASA VIIRS satellites · Bako, Kwali, Abuja</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span class="status-dot" id="statusDot"></span>
+        <span class="status-text" id="statusText">Connecting...</span>
+        <button class="report-btn" onclick="openReportModal()">👥 Report Threat</button>
+        <button class="scan-btn" id="scanBtn" onclick="triggerScan()">🛰️ Scan Now</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1200px;margin:0 auto;padding:14px 20px 0;">
+    <div class="config-banner" id="configBanner">
+      ⚠️ <b>Setup needed:</b> Open <code>config.js</code> and replace <code>WORKER_URL</code> with your Cloudflare Worker URL.
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-value stat-red" id="totalAlerts">0</div>
+      <div class="stat-label">Satellite Alerts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value stat-purple" id="totalReports">0</div>
+      <div class="stat-label">Community Reports</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value stat-green" id="totalScans">0</div>
+      <div class="stat-label">Total Scans</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value stat-yellow" id="lastScanTime">--</div>
+      <div class="stat-label">Last Scan</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value stat-blue" id="nextScan">--</div>
+      <div class="stat-label">Next Auto-Scan</div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="map-section">
+      <div class="section-header">
+        <span>🗺️ Live Threat Map</span>
+        <span style="font-size:11px;color:#7a8ba6;">Bako Area · NASA VIIRS + ESA Sentinel-2</span>
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <div class="alerts-section">
+      <div class="tab-bar">
+        <button class="tab active" id="tabAlerts" onclick="switchTab('alerts')">🚨 Satellite Alerts <span class="tab-badge" id="alertBadge" style="display:none;">0</span></button>
+        <button class="tab" id="tabReports" onclick="switchTab('reports')">👥 Community Reports <span class="tab-badge" id="reportBadge" style="display:none;">0</span></button>
+      </div>
+      <div class="alerts-list" id="alertsList">
+        <div class="empty-state">
+          <div class="empty-state-icon">🛰️</div>
+          <div>Loading satellite data...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Powered by <a href="https://firms.modaps.eosdis.nasa.gov/" target="_blank">NASA FIRMS</a> + <a href="https://sentinel.esa.int/" target="_blank">ESA Sentinel-2</a> ·
+    Built on <a href="https://www.cloudflare.com/products/workers/" target="_blank">Cloudflare Workers</a> ·
+    Protecting Bako, Kwali & Abuja communities
+  </div>
+
+  <!-- REPORT MODAL -->
+  <div class="modal-overlay" id="reportModal">
+    <div class="modal">
+      <h2>👥 Report Suspicious Activity</h2>
+      <p style="font-size:13px;color:#7a8ba6;margin-bottom:10px;">Report what you see in your community. Your report is sent to community watch leaders instantly.</p>
+
+      <label>Type of Report</label>
+      <select id="reportType">
+        <option value="suspicious_activity">Suspicious movement / strangers</option>
+        <option value="fire">Illegal fire / bush burning</option>
+        <option value="intruder">Intruder in farm / property</option>
+        <option value="other">Other threat</option>
+      </select>
+
+      <label>Location (Latitude, Longitude)</label>
+      <input type="text" id="reportLat" placeholder="e.g. 8.8742" style="margin-bottom:6px;">
+      <input type="text" id="reportLon" placeholder="e.g. 7.0215">
+      <button class="geo-btn" onclick="useMyLocation()">📍 Use My Current Location</button>
+
+      <label>What did you see?</label>
+      <textarea id="reportDesc" placeholder="Describe what you saw — number of people, direction they were moving, vehicles, weapons, etc."></textarea>
+
+      <label>Your name (optional)</label>
+      <input type="text" id="reportName" placeholder="Your name (optional)">
+
+      <label>Your phone (optional)</label>
+      <input type="text" id="reportPhone" placeholder="Phone number (optional)">
+
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeReportModal()">Cancel</button>
+        <button class="btn-submit" id="submitReportBtn" onclick="submitReport()">📤 Send Report</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="config.js"></script>
+  <script>
+    const BAKO_CENTER = [8.8742, 7.0215];
+    const FIRMS_MAP_KEY = "0b51aabf947e4847fd98c96117c6cf3d";
+    let map, markerLayer, reportLayer;
+    let currentTab = 'alerts';
+    let allAlerts = [];
+    let allReports = [];
+
+    function initMap() {
+      map = L.map('map').setView(BAKO_CENTER, 12);
+
+      // Layer 1: OpenStreetMap (street map)
+      const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap',
+        maxZoom: 19
+      }).addTo(map);
+
+      // Layer 2: NASA GIBS — Real satellite imagery (VIIRS true color, daily)
+      const satelliteLayer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?', {
+        layers: 'VIIRS_SNPP_CorrectedReflectance_TrueColor',
+        format: 'image/png',
+        transparent: true,
+        attribution: 'NASA GIBS',
+        maxZoom: 12,
+        tileSize: 512
+      });
+
+      // Layer 3: ESA Sentinel-2 — Higher resolution satellite imagery (every 5 days)
+      const sentinelLayer = L.tileLayer(WORKER_URL + '/api/sentinel-imagery', {
+        attribution: 'ESA Sentinel-2 via Worker',
+        maxZoom: 18,
+        tileSize: 512,
+        crossOrigin: true
+      });
+
+      // Layer 4: NASA FIRMS — Active fire detection overlay (24hrs)
+      const fireLayer = L.tileLayer.wms('https://firms.modaps.eosdis.nasa.gov/wms/key/' + FIRMS_MAP_KEY + '/', {
+        layers: 'fires_viirs_snpp_24hrs',
+        format: 'image/png',
+        transparent: true,
+        attribution: 'NASA FIRMS',
+        maxZoom: 19
+      }).addTo(map);
+
+      // Layer toggle control
+      L.control.layers({
+        '🗺️ Street Map': osmLayer,
+        '🛰️ NASA Satellite (daily)': satelliteLayer,
+        '🛰️ Sentinel-2 (5-day)': sentinelLayer,
+        '🔥 Fire Overlay': fireLayer
+      }, null, { collapsed: false, position: 'topright' }).addTo(map);
+
+      markerLayer = L.layerGroup().addTo(map);
+      reportLayer = L.layerGroup().addTo(map);
+
+      const bounds = [[8.8500, 7.0000], [8.9000, 7.0500]];
+      L.rectangle(bounds, {
+        color: '#1ae8a8', weight: 2, fillOpacity: 0.05, dashArray: '5, 5'
+      }).addTo(map);
+
+      L.marker(BAKO_CENTER, {
+        icon: L.divIcon({ html: '📍<div style="font-size:10px;font-weight:700;color:#1ae8a8;">Bako Center</div>', className: '', iconSize: [40, 20] })
+      }).addTo(map);
+    }
+
+    function confClass(c) {
+      const cl = c.toLowerCase();
+      if (cl === 'high' || cl === 'h') return 'high';
+      if (cl === 'nominal' || cl === 'n') return 'nominal';
+      return 'low';
+    }
+    function confLabel(c) {
+      const cl = c.toLowerCase();
+      if (cl === 'h') return 'HIGH';
+      if (cl === 'n') return 'NOMINAL';
+      if (cl === 'l') return 'LOW';
+      return c;
+    }
+    function confColor(c) {
+      const cl = c.toLowerCase();
+      if (cl === 'high' || cl === 'h') return '#ff4757';
+      if (cl === 'nominal' || cl === 'n') return '#ffa502';
+      return '#4da6ff';
+    }
+    function reportTypeLabel(t) {
+      const map = { suspicious_activity: 'Suspicious', fire: 'Fire', intruder: 'Intruder', other: 'Other' };
+      return map[t] || t;
+    }
+    function reportTypeClass(t) {
+      return 'type-' + (t || 'other');
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.getElementById('tabAlerts').classList.toggle('active', tab === 'alerts');
+      document.getElementById('tabReports').classList.toggle('active', tab === 'reports');
+      renderList();
+    }
+
+    async function loadAlerts() {
+      try {
+        const [alertsRes, reportsRes] = await Promise.all([
+          fetch(WORKER_URL + '/api/alerts'),
+          fetch(WORKER_URL + '/api/reports')
+        ]);
+        const alertsData = await alertsRes.json();
+        const reportsData = await reportsRes.json();
+
+        allAlerts = alertsData.alerts || [];
+        allReports = reportsData.reports || [];
+
+        document.getElementById('totalAlerts').textContent = allAlerts.length;
+        document.getElementById('totalReports').textContent = allReports.length;
+        document.getElementById('totalScans').textContent = alertsData.totalScans || '0';
+
+        if (alertsData.lastScan) {
+          const d = new Date(alertsData.lastScan);
+          document.getElementById('lastScanTime').textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const next = new Date(new Date(alertsData.lastScan).getTime() + 60 * 60 * 1000);
+          document.getElementById('nextScan').textContent = next.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        if (allAlerts.length > 0) {
+          document.getElementById('alertBadge').textContent = allAlerts.length;
+          document.getElementById('alertBadge').style.display = 'inline-block';
+        }
+        if (allReports.length > 0) {
+          document.getElementById('reportBadge').textContent = allReports.length;
+          document.getElementById('reportBadge').style.display = 'inline-block';
+        }
+
+        document.getElementById('statusDot').classList.remove('offline');
+        document.getElementById('statusText').textContent = 'System Online · Auto-scanning hourly';
+
+        renderMapMarkers();
+        renderList();
+      } catch (err) {
+        document.getElementById('statusDot').classList.add('offline');
+        document.getElementById('statusText').textContent = 'Connection error';
+        document.getElementById('alertsList').innerHTML =
+          '<div class="empty-state"><div class="empty-state-icon">⚠️</div>' +
+          '<div>Cannot reach satellite server.<br>Check that your Worker URL in config.js is correct.</div></div>';
+        console.error('Failed to load data:', err);
+      }
+    }
+
+    function renderMapMarkers() {
+      markerLayer.clearLayers();
+      reportLayer.clearLayers();
+
+      allAlerts.forEach(a => {
+        const color = confColor(a.confidence);
+        const marker = L.circleMarker([parseFloat(a.lat), parseFloat(a.lon)], {
+          radius: 10, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.8
+        });
+        marker.bindPopup(
+          '<b>🚨 Fire Detection</b><br>Lat: ' + a.lat + '<br>Lon: ' + a.lon + '<br>' +
+          'Confidence: ' + confLabel(a.confidence) + '<br>Date: ' + a.acqDate + ' ' + a.acqTime + ' UTC<br>' +
+          'Satellite: ' + a.satellite + '<br>' +
+          '<a href="https://www.google.com/maps?q=' + a.lat + ',' + a.lon + '" target="_blank">🔗 Google Maps</a>'
+        );
+        markerLayer.addLayer(marker);
+      });
+
+      allReports.forEach(r => {
+        if (!r.lat || !r.lon) return;
+        const marker = L.circleMarker([parseFloat(r.lat), parseFloat(r.lon)], {
+          radius: 8, fillColor: '#a55eea', color: '#fff', weight: 2, fillOpacity: 0.8
+        });
+        marker.bindPopup(
+          '<b>👥 Community Report</b><br>' +
+          'Type: ' + reportTypeLabel(r.type) + '<br>' +
+          'Description: ' + (r.description || 'N/A') + '<br>' +
+          'Reported: ' + new Date(r.submittedAt).toLocaleString() + '<br>' +
+          (r.reporterName ? 'By: ' + r.reporterName + '<br>' : '') +
+          (r.reporterPhone ? 'Phone: ' + r.reporterPhone + '<br>' : '') +
+          '<a href="https://www.google.com/maps?q=' + r.lat + ',' + r.lon + '" target="_blank">🔗 Google Maps</a>'
+        );
+        reportLayer.addLayer(marker);
+      });
+
+      const allMarkers = [...markerLayer.getLayers(), ...reportLayer.getLayers()];
+      if (allMarkers.length > 0) {
+        const group = L.featureGroup(allMarkers);
+        map.fitBounds(group.getBounds(), { padding: [30, 30], maxZoom: 14 });
+      }
+    }
+
+    function renderList() {
+      const list = document.getElementById('alertsList');
+
+      if (currentTab === 'alerts') {
+        if (allAlerts.length === 0) {
+          list.innerHTML = '<div class="empty-state"><div class="empty-state-icon">✅</div><div>No satellite alerts detected.<br>Satellites show clear skies over Bako.</div></div>';
+          return;
+        }
+        list.innerHTML = allAlerts.map(a => {
+          const cc = confClass(a.confidence);
+          const mapLink = 'https://www.google.com/maps?q=' + a.lat + ',' + a.lon;
+          return '<div class="alert-card ' + cc + '">' +
+            '<div class="alert-top">' +
+              '<div class="alert-coords">📍 ' + parseFloat(a.lat).toFixed(4) + ', ' + parseFloat(a.lon).toFixed(4) + '</div>' +
+              '<span class="alert-confidence conf-' + cc + '">' + confLabel(a.confidence) + '</span>' +
+            '</div>' +
+            '<div class="alert-meta">' +
+              '<span>📅 ' + a.acqDate + '</span>' +
+              '<span>🕐 ' + a.acqTime + ' UTC</span>' +
+              '<span>🛰️ ' + a.satellite + '</span>' +
+              (a.brightness !== 'n/a' ? '<span>🔥 ' + a.brightness + 'K</span>' : '') +
+            '</div>' +
+            '<a href="' + mapLink + '" target="_blank" class="alert-link">🔗 View on Google Maps</a>' +
+          '</div>';
+        }).join('');
+      } else {
+        if (allReports.length === 0) {
+          list.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><div>No community reports yet.<br>Use "Report Threat" to report suspicious activity.</div></div>';
+          return;
+        }
+        list.innerHTML = allReports.map(r => {
+          const mapLink = r.lat && r.lon ? 'https://www.google.com/maps?q=' + r.lat + ',' + r.lon : '#';
+          return '<div class="alert-card report">' +
+            '<div class="alert-top">' +
+              '<div class="alert-coords"><span class="report-type-badge ' + reportTypeClass(r.type) + '">' + reportTypeLabel(r.type) + '</span>' + new Date(r.submittedAt).toLocaleString() + '</div>' +
+              '<span class="alert-confidence conf-report">REPORT</span>' +
+            '</div>' +
+            '<div style="font-size:13px;margin:8px 0;color:#e0e6f0;">' + (r.description || 'No description provided') + '</div>' +
+            (r.lat && r.lon ? '<div class="alert-meta"><span>📍 ' + parseFloat(r.lat).toFixed(4) + ', ' + parseFloat(r.lon).toFixed(4) + '</span></div>' : '') +
+            (r.reporterName ? '<div class="alert-meta"><span>👤 ' + r.reporterName + '</span></div>' : '') +
+            (r.reporterPhone ? '<div class="alert-meta"><span>📞 ' + r.reporterPhone + '</span></div>' : '') +
+            (r.lat && r.lon ? '<a href="' + mapLink + '" target="_blank" class="alert-link">🔗 View on Google Maps</a>' : '') +
+          '</div>';
+        }).join('');
+      }
+    }
+
+    async function triggerScan() {
+      const btn = document.getElementById('scanBtn');
+      btn.disabled = true;
+      btn.textContent = '🛰️ Scanning...';
+      showToast('🛰️ Contacting satellites...');
+      try {
+        const res = await fetch(WORKER_URL + '/api/scan', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          if (data.newAlerts > 0) {
+            showToast('🚨 ' + data.newAlerts + ' new threat(s) detected!');
+          } else {
+            showToast('✅ Scan complete. No new threats.');
+          }
+          await loadAlerts();
+        } else {
+          showToast('⚠️ Scan error: ' + (data.error || 'Unknown'));
+        }
+      } catch (err) {
+        showToast('❌ Failed to trigger scan');
+      }
+      btn.disabled = false;
+      btn.textContent = '🛰️ Scan Now';
+    }
+
+    async function clearAlerts() {
+      if (!confirm('Clear all stored alerts? This cannot be undone.')) return;
+      try {
+        await fetch(WORKER_URL + '/api/clear', { method: 'POST' });
+        showToast('✅ All alerts cleared');
+        await loadAlerts();
+      } catch (err) {
+        showToast('❌ Failed to clear alerts');
+      }
+    }
+
+    // ==========================================
+    // COMMUNITY REPORT MODAL
+    // ==========================================
+
+    function openReportModal() {
+      document.getElementById('reportModal').classList.add('show');
+    }
+    function closeReportModal() {
+      document.getElementById('reportModal').classList.remove('show');
+    }
+
+    function useMyLocation() {
+      if (!navigator.geolocation) {
+        showToast('❌ GPS not available on this device');
+        return;
+      }
+      showToast('📍 Getting your location...');
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          document.getElementById('reportLat').value = pos.coords.latitude.toFixed(6);
+          document.getElementById('reportLon').value = pos.coords.longitude.toFixed(6);
+          showToast('✅ Location captured');
+        },
+        (err) => {
+          showToast('❌ Could not get location. Enter coordinates manually.');
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+
+    async function submitReport() {
+      const type = document.getElementById('reportType').value;
+      const lat = document.getElementById('reportLat').value.trim();
+      const lon = document.getElementById('reportLon').value.trim();
+      const description = document.getElementById('reportDesc').value.trim();
+      const reporterName = document.getElementById('reportName').value.trim();
+      const reporterPhone = document.getElementById('reportPhone').value.trim();
+
+      if (!description) {
+        showToast('⚠️ Please describe what you saw');
+        return;
+      }
+
+      const btn = document.getElementById('submitReportBtn');
+      btn.disabled = true;
+      btn.textContent = '📤 Sending...';
+
+      try {
+        const res = await fetch(WORKER_URL + '/api/report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, lat, lon, description, reporterName, reporterPhone }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('✅ Report sent to community watch');
+          closeReportModal();
+          document.getElementById('reportType').value = 'suspicious_activity';
+          document.getElementById('reportLat').value = '';
+          document.getElementById('reportLon').value = '';
+          document.getElementById('reportDesc').value = '';
+          document.getElementById('reportName').value = '';
+          document.getElementById('reportPhone').value = '';
+          await loadAlerts();
+        } else {
+          showToast('⚠️ Failed: ' + (data.error || 'Unknown'));
+        }
+      } catch (err) {
+        showToast('❌ Failed to send report');
+      }
+      btn.disabled = false;
+      btn.textContent = '📤 Send Report';
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    document.getElementById('reportModal').addEventListener('click', function(e) {
+      if (e.target === this) closeReportModal();
+    });
+
+    if (typeof WORKER_URL === 'undefined' || WORKER_URL === 'YOUR_WORKER_URL_HERE') {
+      document.getElementById('configBanner').classList.add('show');
+      document.getElementById('statusDot').classList.add('offline');
+      document.getElementById('statusText').textContent = 'Configuration needed';
+      document.getElementById('alertsList').innerHTML =
+        '<div class="empty-state"><div class="empty-state-icon">⚙️</div>' +
+        '<div>Open <code>config.js</code> and set your Worker URL.<br>' +
+        'Your Worker URL is:<br>' +
+        '<code>https://bako-satellite-app.umoruanthony965.workers.dev</code></div></div>';
+    } else {
+      initMap();
+      loadAlerts();
+      setInterval(loadAlerts, 60000);
+    }
+  </script>
+</body>
+</html>
